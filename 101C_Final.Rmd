@@ -1,0 +1,118 @@
+---
+title: "101Final"
+output: html_document
+---
+
+```{r}
+library(xgboost)
+library(dplyr)
+library(Matrix)
+library(lubridate)
+
+testingWithoutResponse<-read.table("~/Downloads/testing.without.response.csv", sep=",", header = T)
+lafd<-read.table("~/Downloads/lafdtraining.csv", sep=",", header = T)
+
+
+lafd$Incident.Creation.Time..GMT.<-hms(lafd$Incident.Creation.Time..GMT.)
+lafd$Dispatch.Sequence<-as.numeric(lafd$Dispatch.Sequence)
+lafd$hour <- factor(hour(lafd$Incident.Creation.Time..GMT.))
+lafd$month<- factor(month(lafd$Incident.Creation.Time..GMT.))
+
+
+
+trainIndex<-sample(1:nrow(lafd),.7*nrow(lafd), replace = F)
+train<-lafd[trainIndex,]
+test<-lafd[-trainIndex,]
+
+
+
+
+train<-train%>%dplyr::select(year,First.in.District,Dispatch.Sequence,Dispatch.Status,Unit.Type,PPE.Level,hour,elapsed_time)%>%na.omit()%>%filter(elapsed_time<1500)%>%distinct()
+test<-test%>%dplyr::select(year,First.in.District,Dispatch.Sequence,Dispatch.Status,Unit.Type,PPE.Level,hour,elapsed_time)%>%na.omit()
+
+
+####AVERAGE TIME BY LOCATION######
+groupedData<-lafd%>%select(elapsed_time,First.in.District)%>%group_by(First.in.District)%>%summarise(avgTime=mean(elapsed_time, na.rm=TRUE))
+############################
+
+####NUMBER OF VEHICLES SENT######
+vehiclesPerId<-lafd%>%group_by(incident.ID)%>%summarise(numberOfVehicles=n())
+###############################
+
+###AVERAGE RESPONSE TIME BY LOCATION AND HOUR#####
+hourlyGroupedData<-lafd%>%select(elapsed_time,First.in.District, hour)%>%group_by(First.in.District, hour)%>%summarise(avgTime=mean(elapsed_time, na.rm=TRUE))
+################################
+
+
+####EMS RATIO PER ID#####
+emsNumber<-lafd%>%select(incident.ID,PPE.Level)%>%group_by(incident.ID)%>%summarise(emsRatio=(sum(PPE.Level=="EMS")/n()))
+#########################
+
+
+###VARIANCE IN TIME BY ID#####
+sdData<-lafd%>%select(incident.ID,elapsed_time)%>%group_by(incident.ID)%>%summarise(variance=sd(elapsed_time, na.rm=TRUE))
+##################################
+
+
+###########AVERAGE NUMBER OF VEHICLES SENT BY LOCATION################
+vehiclesByLocation<-lafd%>%select(incident.ID,First.in.District)%>%group_by(incident.ID)%>%summarise(numberOfVehicles=n(),location=mean(First.in.District))%>%select(location,numberOfVehicles)%>%group_by(location)%>%summarise(avgVehicles=mean(numberOfVehicles))
+##############################################
+
+
+
+
+
+
+
+
+
+
+sparse_matrix <- sparse.model.matrix(elapsed_time~.-1, data = train)
+testMatrix<-sparse.model.matrix(elapsed_time~.-1, data = test)
+
+xgbModel<-xgboost(data = sparse_matrix, label=train$elapsed_time,max_depth = 1000, eta = .4, nthread = 5, nrounds = 10, early_stopping_rounds = 5)
+
+
+pred<-predict(xgbModel,testMatrix)
+sqrt(mean((pred-test$elapsed_time)^2))
+
+
+
+
+#IMPORTANT FACTORS
+#importance <- xgb.importance(feature_names = colnames(sparse_matrix), model = xgbModel)
+#xgb.plot.importance(importance_matrix = importance)
+
+
+
+
+
+#Production
+finalData<-testingWithoutResponse%>%dplyr::select(year,First.in.District,Dispatch.Sequence,Dispatch.Status,Unit.Type,PPE.Level,hour)
+finalData$Dispatch.Sequence<-as.numeric(finalData$Dispatch.Sequence)
+finalData$Incident.Creation.Time..GMT. <- factor(hour(hms(finalData$Incident.Creation.Time..GMT.)))
+finalData$response<-rep(0,nrow(finalData))
+finalData$Dispatch.Sequence[is.na(finalData$Dispatch.Sequence)==T]<-1
+
+
+
+finalMatrix <- sparse.model.matrix(response~.-1, data = finalData)
+pred<-predict(xgbModel,finalMatrix)
+
+finalDF<-data.frame(row.id=testingWithoutResponse$row.id, prediction=pred)
+write.csv(finalDF,"101CPrediction1.csv", row.names = FALSE)
+
+
+
+
+
+#WERE MULTIPLE VEHICLES SENT?
+#DIFFERENCE IN TIMES?
+```
+
+
+
+
+
+
+
