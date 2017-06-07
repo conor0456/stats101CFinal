@@ -43,23 +43,26 @@ vehiclesPerId<-lafd%>%group_by(incident.ID)%>%summarise(numberOfVehicles=n())
 hourlyGroupedData<-lafd%>%select(elapsed_time,First.in.District, hour)%>%group_by(First.in.District, hour)%>%summarise(avgTime=mean(elapsed_time, na.rm=TRUE))
 ################################
 
-
 ####EMS RATIO PER ID#####
 emsNumber<-lafd%>%select(incident.ID,PPE.Level)%>%group_by(incident.ID)%>%summarise(emsRatio=(sum(PPE.Level=="EMS")/n()))
 #########################
 
-
 ###VARIANCE IN TIME BY ID#####
 sdData<-lafd%>%select(incident.ID,elapsed_time)%>%group_by(incident.ID)%>%summarise(variance=sd(elapsed_time, na.rm=TRUE))
 ##################################
-
 
 ###########AVERAGE NUMBER OF VEHICLES SENT BY LOCATION################
 vehiclesByLocation<-lafd%>%select(incident.ID,First.in.District)%>%group_by(incident.ID)%>%summarise(numberOfVehicles=n(),location=mean(First.in.District))%>%select(location,numberOfVehicles)%>%group_by(location)%>%summarise(avgVehicles=mean(numberOfVehicles))
 ##############################################
 
 
+#####PUTTING IT ALL TOGETHER##################
+mergedByLocation<-merge(groupedData,vehiclesByLocation, by.x = 1, by.y=1)
+mergedById<-merge(vehiclesPerId,sdData,by=1)
 
+join1<-left_join(lafd,mergedByLocation,by=c("First.in.District","First.in.District"))
+finalJoin<-left_join(join1,mergedById,by=c("incident.ID","incident.ID"))
+#############################################
 
 
 
